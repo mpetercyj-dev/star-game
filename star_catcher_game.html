@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Catcher Game</title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        color: #f8fafc;
+        background: linear-gradient(135deg, #101b3d, #253b70);
+    }
+    .game-card {
+        width: min(100%, 620px);
+        padding: 22px;
+        border: 1px solid rgba(255,255,255,.16);
+        border-radius: 20px;
+        background: rgba(9, 17, 40, .88);
+        box-shadow: 0 18px 50px rgba(0,0,0,.3);
+        text-align: center;
+    }
+    h1 { margin: 0 0 8px; }
+    .intro { color: #cbd5e1; margin: 0 0 18px; }
+    .stats {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    .stat {
+        flex: 1;
+        padding: 10px;
+        border-radius: 12px;
+        background: #1e2c52;
+        font-weight: bold;
+    }
+    .stat span { display: block; margin-top: 4px; color: #facc15; font-size: 1.25rem; }
+    #game {
+        position: relative;
+        height: 360px;
+        overflow: hidden;
+        border: 2px solid #53658f;
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 15% 20%, #ffffff 1px, transparent 2px),
+          radial-gradient(circle at 75% 30%, #ffffff 1px, transparent 2px),
+          radial-gradient(circle at 45% 65%, #ffffff 1px, transparent 2px),
+          linear-gradient(#101a3d, #243d70);
+        background-size: 90px 90px, 130px 130px, 110px 110px, auto;
+    }
+    #basket {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        width: 76px;
+        height: 28px;
+        transform: translateX(-50%);
+        border-radius: 5px 5px 16px 16px;
+        border: 3px solid #fed7aa;
+        border-top: 7px solid #fb923c;
+        background: #c2410c;
+    }
+    .star {
+        position: absolute;
+        top: -30px;
+        font-size: 27px;
+        line-height: 1;
+        user-select: none;
+    }
+    #message {
+        min-height: 26px;
+        margin: 12px 0 6px;
+        color: #fde68a;
+        font-weight: bold;
+    }
+    button {
+        border: 0;
+        border-radius: 10px;
+        padding: 11px 18px;
+        margin: 5px;
+        background: #f59e0b;
+        color: #1f2937;
+        font-size: 1rem;
+        font-weight: bold;
+        cursor: pointer;
+    }
+    button:hover { background: #fbbf24; }
+    .help { color: #cbd5e1; font-size: .9rem; margin-bottom: 0; }
+    .touch-controls { display: none; }
+    @media (max-width: 600px) {
+        #game { height: 330px; }
+        .touch-controls { display: block; margin-top: 8px; }
+        .touch-controls button { min-width: 90px; }
+    }
+</style>
+</head>
+<body>
+<main class="game-card">
+    <h1>⭐ Star Catcher</h1>
+    <p class="intro">Catch as many falling stars as you can!</p>
+
+    <div class="stats">
+        <div class="stat">Score <span id="score">0</span></div>
+        <div class="stat">Time <span id="time">30</span></div>
+        <div class="stat">Best <span id="best">0</span></div>
+    </div>
+
+    <div id="game" aria-label="Game area">
+        <div id="basket"></div>
+    </div>
+
+    <div id="message">Press Start Game to play.</div>
+    <button id="startBtn">Start Game</button>
+    <div class="touch-controls">
+        <button id="leftBtn" aria-label="Move left">← Left</button>
+        <button id="rightBtn" aria-label="Move right">Right →</button>
+    </div>
+    <p class="help">Use the ← and → arrow keys, or A and D, to move the basket. On a phone, use the buttons.</p>
+</main>
+
+<script>
+    const game = document.getElementById("game");
+    const basket = document.getElementById("basket");
+    const scoreDisplay = document.getElementById("score");
+    const timeDisplay = document.getElementById("time");
+    const bestDisplay = document.getElementById("best");
+    const message = document.getElementById("message");
+    const startBtn = document.getElementById("startBtn");
+
+    let score = 0;
+    let timeLeft = 30;
+    let basketX = 0;
+    let movingLeft = false;
+    let movingRight = false;
+    let running = false;
+    let stars = [];
+    let gameLoopId = null;
+    let timerId = null;
+    let spawnCounter = 0;
+    let best = Number(localStorage.getItem("starCatcherBest") || 0);
+
+    bestDisplay.textContent = best;
+
+    function setBasketPosition() {
+        const maxX = game.clientWidth - basket.offsetWidth;
+        basketX = Math.max(0, Math.min(maxX, basketX));
+        basket.style.left = basketX + "px";
+        basket.style.transform = "none";
+    }
+
+    function clearStars() {
+        stars.forEach(star => star.element.remove());
+        stars = [];
+    }
+
+    function createStar() {
+        const element = document.createElement("div");
+        element.className = "star";
+        element.textContent = "⭐";
+        const maxX = game.clientWidth - 30;
+        const x = Math.random() * maxX;
+        element.style.left = x + "px";
+        game.appendChild(element);
+        stars.push({ element, x, y: -30, speed: 2 + Math.random() * 2 });
+    }
+
+    function endGame() {
+        running = false;
+        clearInterval(timerId);
+        cancelAnimationFrame(gameLoopId);
+        clearStars();
+        message.textContent = `Time's up! You caught ${score} stars.`;
+        startBtn.textContent = "Play Again";
+        if (score > best) {
+            best = score;
+            localStorage.setItem("starCatcherBest", best);
+            bestDisplay.textContent = best;
+            message.textContent += " New best score!";
+        }
+    }
+
+    function updateGame() {
+        if (!running) return;
+
+        if (movingLeft) basketX -= 5;
+        if (movingRight) basketX += 5;
+        setBasketPosition();
+
+        spawnCounter++;
+        if (spawnCounter >= 38) {
+            createStar();
+            spawnCounter = 0;
+        }
+
+        const basketTop = game.clientHeight - basket.offsetHeight - 12;
+        const basketRight = basketX + basket.offsetWidth;
+
+        stars = stars.filter(star => {
+            star.y += star.speed;
+            star.element.style.top = star.y + "px";
+
+            const caught =
+                star.y + 24 >= basketTop &&
+                star.y <= basketTop + basket.offsetHeight &&
+                star.x + 24 >= basketX &&
+                star.x <= basketRight;
+
+            if (caught) {
+                score++;
+                scoreDisplay.textContent = score;
+                star.element.remove();
+                return false;
+            }
+
+            if (star.y > game.clientHeight) {
+                star.element.remove();
+                return false;
+            }
+            return true;
+        });
+
+        gameLoopId = requestAnimationFrame(updateGame);
+    }
+
+    function startGame() {
+        clearInterval(timerId);
+        cancelAnimationFrame(gameLoopId);
+        clearStars();
+
+        score = 0;
+        timeLeft = 30;
+        spawnCounter = 0;
+        scoreDisplay.textContent = score;
+        timeDisplay.textContent = timeLeft;
+        basketX = (game.clientWidth - basket.offsetWidth) / 2;
+        setBasketPosition();
+
+        running = true;
+        message.textContent = "Go! Catch those stars!";
+        startBtn.textContent = "Restart Game";
+
+        timerId = setInterval(() => {
+            if (!running) return;
+            timeLeft--;
+            timeDisplay.textContent = timeLeft;
+            if (timeLeft <= 0) endGame();
+        }, 1000);
+
+        updateGame();
+    }
+
+    document.addEventListener("keydown", event => {
+        if (["ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
+        if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") movingLeft = true;
+        if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") movingRight = true;
+    });
+
+    document.addEventListener("keyup", event => {
+        if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") movingLeft = false;
+        if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") movingRight = false;
+    });
+
+    function holdButton(buttonId, direction) {
+        const button = document.getElementById(buttonId);
+        button.addEventListener("pointerdown", event => {
+            event.preventDefault();
+            if (direction === "left") movingLeft = true;
+            else movingRight = true;
+        });
+        ["pointerup", "pointerleave", "pointercancel"].forEach(type => {
+            button.addEventListener(type, () => {
+                if (direction === "left") movingLeft = false;
+                else movingRight = false;
+            });
+        });
+    }
+
+    holdButton("leftBtn", "left");
+    holdButton("rightBtn", "right");
+    startBtn.addEventListener("click", startGame);
+
+    window.addEventListener("resize", () => {
+        basketX = Math.min(basketX, game.clientWidth - basket.offsetWidth);
+        setBasketPosition();
+    });
+
+    basketX = (game.clientWidth - basket.offsetWidth) / 2;
+    setBasketPosition();
+</script>
+</body>
+</html>
